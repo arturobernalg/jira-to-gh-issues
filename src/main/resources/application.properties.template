@@ -21,7 +21,9 @@ jira.base-url=https://issues.apache.org/jira
 #jira.projectId=SPR
 #jira.projectId=SEC
 #jira.projectId=MCLEAN
-jira.projectId=SUREFIRE
+jira.projectId=HTTPCORE
+#jira.projectId=HTTPCLIENT
+#jira.projectId=HTTPASYNC
 
 
 # for MPOM
@@ -36,7 +38,10 @@ jira.projectId=SUREFIRE
 #github.repository-slug=rstoyanchev/spr-issue-migration-test
 #github.repository-slug=rwinch/spring-security-migrate-issues
 #github.repository-slug=rstoyanchev/swf-migration-test
-github.repository-slug=support-and-care/mvn-surefire-issues-migration-test
+github.repository-slug=arturobernalg/hc-core-issues-test
+#github.repository-slug=apache/httpcomponents-core
+#github.repository-slug=apache/httpcomponents-client
+#github.repository-slug=apache/httpasyncclient
 
 ##
 # If set, the migration script will attempt to delete / create a GitHub
@@ -45,12 +50,47 @@ github.repository-slug=support-and-care/mvn-surefire-issues-migration-test
 github.delete-create-repository-slug=false
 
 ##
+# Test run against a scratch repository: no assignees, no pull request references,
+# no comments on pull requests. Must be false only for the real migration.
+github.dry-run=true
+
+##
+# Comment "Resolve #n" on pull requests from Jira remote links. Keep false:
+# the comment goes to the pull request with that number in the target repository,
+# even if the link points to another repository.
+github.link-pull-requests=false
+
+##
+# One extra "<milestone> Backported Issues" issue per backport milestone.
+github.create-backport-holders=false
+
+##
+# Apache HttpComponents version names ("5.4-alpha2", "4.1 Beta1") are releases.
+jira.version-scheme=RELEASE
+
+##
+# Jira keys linked in converted text.
+jira.link-project-keys=HTTPCLIENT,HTTPCORE,HTTPASYNC
+
+##
+# Escape "#123" in Jira text, which would otherwise link to an unrelated GitHub issue.
+jira.escape-issue-references=true
+
+##
 # If set, will use this JQL query to import issues.
 # Useful for migrating only a subset of queries (for testing).
 # The default is to use "project = ${jira.projectId}"
 #jira.migrate-jql=id\=SEC-1
 #jira.migrate-jql=id\=SPR-14821
 #jira.migrate-jql=project\=SWF AND created>2015-01-01
+
+# JQL Queries for HTTPCLIENT migration. More than 1000 issues, so it is done in four runs
+# of 715, 527, 585 and 515 issues (counted 2026-10-25). Do not append comments to the
+# values: "#" is only a comment at the start of a line.
+#jira.migrate-jql=project\=HTTPCLIENT AND created < 2008-01-01
+#jira.migrate-jql=project\=HTTPCLIENT AND created >= 2008-01-01 AND created < 2013-01-01
+#jira.migrate-jql=project\=HTTPCLIENT AND created >= 2013-01-01 AND created < 2018-01-01
+#jira.migrate-jql=project\=HTTPCLIENT AND created >= 2018-01-01
 
 # JQL Queries for SUREFIRE migration. It has to be done in five migration runs
 #jira.migrate-jql=project\=${jira.projectId} AND created < 2007-01-01

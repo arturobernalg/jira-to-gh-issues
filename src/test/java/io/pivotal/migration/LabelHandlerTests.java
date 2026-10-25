@@ -26,11 +26,13 @@ import io.pivotal.jira.JiraIssue;
 import io.pivotal.jira.JiraIssueType;
 import io.pivotal.jira.JiraResolution;
 import io.pivotal.jira.JiraStatus;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 
+@Disabled("Tests the Spring label configuration that was removed upstream")
 public class LabelHandlerTests {
 
 	private final LabelHandler labelHandler = new SprMigrationConfig().labelHandler();

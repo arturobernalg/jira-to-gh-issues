@@ -112,6 +112,10 @@ public class MigrationApp implements CommandLineRunner {
 			context.setPreviouslyImportedIssueMappings(issueMappings);
 			context.setPreviouslyPendingIssuesMapping(issuesPendingMapping);
 
+			// Before any write to GitHub
+			github.validateDryRunRepository();
+			github.validateAssignees();
+
 			try {
 				// Delete if github.delete-create-repository-slug=true AND 0 commits
 				if (github.deleteRepository()) {

@@ -32,6 +32,13 @@ public class JiraCommentPage {
 
 	List<JiraComment> comments;
 
+	/** Number of comments in Jira, which may exceed the size of {@link #comments}. */
+	int total;
+
+	public boolean isComplete() {
+		return comments.size() >= total;
+	}
+
 
 	public List<JiraComment> getVisibleComments() {
 		return comments.stream()

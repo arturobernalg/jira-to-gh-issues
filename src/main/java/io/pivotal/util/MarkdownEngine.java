@@ -52,6 +52,7 @@ import lombok.Data;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.Assert;
+import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 /**
@@ -391,7 +392,9 @@ public class MarkdownEngine implements MarkupEngine {
 
 		private static final Pattern ghUserMentionPattern = Pattern.compile("(^|[^\\w])(@[\\w-]+)");
 
-		private static final Pattern jiraKeyPattern = Pattern.compile("(" +
+		private static final Pattern ghIssueReferencePattern = Pattern.compile("(^|[\\s(\\[,;])(#\\d+)\\b");
+
+		private static final Pattern springJiraKeyPattern = Pattern.compile("(" +
 				"(GREENHOUSE|IMPALA|GRADLE|SHDPADMIN|AMQP|AMQPNET|BATCH|" +
 				"BATCHADM|FLEX|DATAAERO|DATACOL|DATACMNS|DATACOUCH|DATAES|DATACASS|DATASOLR|SGF|DATAGEODE|DATAHB|" +
 				"DATAJDBC|DATAJPA|DATAKV|DATALDAP|DATAMAP|DATAMONGO|DATAGRAPH|DATAREDIS|DATAREST|DATARIAK|ANDROID|" +
@@ -413,9 +416,18 @@ public class MarkdownEngine implements MarkupEngine {
 
 		private final String jiraIssueBaseUrl;
 
+		private final Pattern jiraKeyPattern;
+
+		private final boolean escapeIssueReferences;
+
 
 		Phase2NodePostProcessor(JiraConfig jiraConfig) {
 			this.jiraIssueBaseUrl = jiraConfig.getBaseUrl() + "/browse/";
+			this.escapeIssueReferences = jiraConfig.isEscapeIssueReferences();
+			List<String> keys = jiraConfig.getLinkProjectKeys();
+			this.jiraKeyPattern = CollectionUtils.isEmpty(keys) ? springJiraKeyPattern :
+					Pattern.compile("((" + keys.stream().map(Pattern::quote).collect(Collectors.joining("|")) +
+							")-[0-9]{1,5}+)");
 		}
 
 
@@ -424,6 +436,7 @@ public class MarkdownEngine implements MarkupEngine {
 			String content = node.getChars().toString();
 			if (node instanceof Text) {
 				content = applyGhUserMentionPattern(content);
+				content = applyGhIssueReferencePattern(content);
 				content = replaceJiraKeysWithLinks(node, content);
 				// Unordered lists:
 				// no need to convert "-" or "* " (same in Markdown).
@@ -451,6 +464,7 @@ public class MarkdownEngine implements MarkupEngine {
 					// Jira bold "*" to markdown bold "**"
 					content = content.substring(1, content.length() - 1);
 					content = applyGhUserMentionPattern(content);
+					content = applyGhIssueReferencePattern(content);
 					content = "**" + content + "**";
 				}
 				// else: emphasis with "_"
@@ -472,6 +486,13 @@ public class MarkdownEngine implements MarkupEngine {
 		private String applyGhUserMentionPattern(String text) {
 			// Escape "@"-prefixed content to avoid incidental GitHub user mentions.
 			return ghUserMentionPattern.matcher(text).replaceAll("$1`$2`");
+		}
+
+		private String applyGhIssueReferencePattern(String text) {
+			if (!escapeIssueReferences) {
+				return text;
+			}
+			return ghIssueReferencePattern.matcher(text).replaceAll("$1`$2`");
 		}
 
 		private String replaceJiraKeysWithLinks(Node node, String text) {

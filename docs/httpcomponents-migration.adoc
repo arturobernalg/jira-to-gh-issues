@@ -1,0 +1,55 @@
+# Apache HttpComponents: Jira to GitHub Issues
+
+Fork of the Apache Maven migration tool, adapted for the Jira projects HTTPCORE,
+HTTPCLIENT and HTTPASYNC.
+
+## Changes to the Maven tool
+
+* `github.link-pull-requests` (default `false`). The tool used to comment "Resolve #n" on the
+  pull request with that number in the target repository, even when the Jira remote link
+  pointed to another repository (16 such links in HttpComponents).
+* `github.create-backport-holders` (default `false`). One extra "<milestone> Backported Issues"
+  issue per backport milestone. The "Backported to" line of each issue keeps the information.
+* `github.dry-run`: no assignees, no pull request references, no pull request comments, and the
+  target repository must be private, since links to real pull requests show on their timelines.
+* `jira.version-scheme=RELEASE`: orders "5.4-alpha2", "4.1 Beta1", "3.0 RC1" and "2.0 Milestone 1"
+  correctly. The milestone is the newest fix version, all others are backports.
+* `jira.link-project-keys`: Jira keys linked in converted text.
+* `jira.escape-issue-references`: escapes "#123" in Jira text, which would otherwise link to an
+  unrelated GitHub issue.
+* The closing date is the Jira resolution date, not the last update.
+* The run fails if a Jira search page or any comment fails to load, instead of migrating a subset.
+* The run fails before any write if a mapped assignee cannot be assigned in the target repository.
+* Existing milestones and labels are read with pagination (HTTPCLIENT has 141 versions).
+
+Project configuration: `CommonHttpComponentsMigrationConfig`. Labels: issue type, component
+(`in:`), blocker and critical priority, `stuck` and `help wanted`. Comments of `githubbot` and
+`hudson` are dropped, `jira-bot` commit comments are kept. Versions "Future" and "Stuck" are not
+milestones. No assignees are mapped.
+
+## Running
+
+Build with `./mvnw verify`. Copy `src/main/resources/application.properties.template` to
+`src/main/resources/application.properties` and put the token in
+`src/main/resources/application-local.properties` (both ignored by git):
+
+```
+github.access-token=...
+```
+
+Preview the Markdown conversion without touching GitHub (writes `markup-before.txt` and
+`markup-after.txt`):
+
+```
+java -cp target/classes:<dependencies> io.pivotal.pre.MarkupConverter
+```
+
+Dry run: create a private repository, keep `github.dry-run=true` and point
+`github.repository-slug` at it, then run `java -jar target/jira-to-gh-issues-0.0.1-SNAPSHOT.jar`.
+
+HTTPCLIENT has more than 1000 issues and is migrated in four runs, see the `jira.migrate-jql`
+lines in the template. Every run appends to `github-issue-mappings.properties`; keep it, it is
+needed to resume and for `jiralink`.
+
+A real run against an apache repository needs `github.dry-run=false`, the token of the
+jira-importer account and the coordination with Infra described in INFRA-28579.

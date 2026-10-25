@@ -110,7 +110,8 @@ public class JiraClient {
 							.filter(issue -> issue.getFields().getFixVersions() != null)
 							.collect(Collectors.toMap(JiraIssue::getKey, o -> o));
 
-					issues.forEach(issue -> issue.initFixAndBackportVersions(backportSubtasks));
+					issues.forEach(issue -> issue.initFixAndBackportVersions(backportSubtasks, jiraConfig.getVersionScheme()));
+					issues.forEach(JiraClient::assertAllCommentsLoaded);
 				});
 	}
 
@@ -152,9 +153,36 @@ public class JiraClient {
 							});
 
 				}, concurrency)
-				.sort(Comparator.comparingLong(JiraSearchResult::getStartAt))
-				.concatMapIterable(JiraSearchResult::getIssues)
+				.collectList()
+				.flatMapIterable(JiraClient::assertAllIssuesLoaded)
 				.doOnComplete(() -> System.out.println("complete"));
+	}
+
+	/**
+	 * Failed pages are skipped above, so fail here rather than silently migrating a subset.
+	 */
+	static List<JiraIssue> assertAllIssuesLoaded(List<JiraSearchResult> results) {
+		List<JiraSearchResult> pages = results.stream()
+				.filter(result -> result.getIssues() != null)
+				.sorted(Comparator.comparingLong(JiraSearchResult::getStartAt))
+				.toList();
+		if (pages.isEmpty() || pages.get(0).getStartAt() != 0) {
+			throw new IllegalStateException("First page of Jira search results could not be loaded");
+		}
+		List<JiraIssue> issues = pages.stream().flatMap(page -> page.getIssues().stream()).toList();
+		long total = pages.get(0).getTotal();
+		if (issues.size() != total) {
+			throw new IllegalStateException("Loaded " + issues.size() + " issues but Jira reports " + total);
+		}
+		return issues;
+	}
+
+	static void assertAllCommentsLoaded(JiraIssue issue) {
+		JiraCommentPage comments = issue.getFields().getComment();
+		if (comments != null && !comments.isComplete()) {
+			throw new IllegalStateException("Loaded " + comments.getComments().size() + " of " +
+					comments.getTotal() + " comments for " + issue.getKey());
+		}
 	}
 
 	/**

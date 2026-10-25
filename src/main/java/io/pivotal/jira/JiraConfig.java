@@ -15,6 +15,9 @@
  */
 package io.pivotal.jira;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
@@ -58,6 +61,23 @@ public class JiraConfig {
 	 * Component in shared projects (Optional).
 	 */
 	String component;
+
+	/**
+	 * How fix versions are ordered to select the milestone and the backport versions.
+	 */
+	VersionScheme versionScheme = VersionScheme.SPRING;
+
+	/**
+	 * Jira project keys to link in converted text, e.g. "HTTPCLIENT,HTTPCORE".
+	 * If empty, the Spring project keys are used.
+	 */
+	List<String> linkProjectKeys = new ArrayList<>();
+
+	/**
+	 * Whether to escape "#123" in converted text, so it does not link to an unrelated
+	 * GitHub issue or pull request in the target repository.
+	 */
+	boolean escapeIssueReferences;
 
 	public String getMigrateJql() {
 		if(null != migrateJql) {

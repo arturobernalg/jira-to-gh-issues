@@ -18,14 +18,17 @@ package io.pivotal.pre;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
 import io.pivotal.jira.JiraConfig;
+import io.pivotal.jira.VersionScheme;
 
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.support.PropertiesLoaderUtils;
+import org.springframework.util.StringUtils;
 
 
 /**
@@ -55,6 +58,13 @@ public class BaseApp {
 		config.setUser(props.getProperty("jira.user"));
 		config.setPassword(props.getProperty("jira.password"));
 		config.setComponent(props.getProperty("jira.component"));
+		String versionScheme = props.getProperty("jira.version-scheme");
+		if (StringUtils.hasText(versionScheme)) {
+			config.setVersionScheme(VersionScheme.valueOf(versionScheme.trim()));
+		}
+		config.setLinkProjectKeys(Arrays.asList(
+				StringUtils.tokenizeToStringArray(props.getProperty("jira.link-project-keys", ""), ",")));
+		config.setEscapeIssueReferences(Boolean.parseBoolean(props.getProperty("jira.escape-issue-references")));
 		return config;
 	}
 

@@ -25,6 +25,7 @@ import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import io.pivotal.jira.JiraIssue.Fields;
@@ -33,6 +34,7 @@ import io.pivotal.jira.JiraIssue.Fields;
  * @author Rob Winch
  * @author Rossen Stoyanchev
  */
+@Disabled("Queries the Spring Jira, which no longer exists")
 public class JiraClientTests {
 	private JiraConfig jiraConfig;
 	private JiraClient client;

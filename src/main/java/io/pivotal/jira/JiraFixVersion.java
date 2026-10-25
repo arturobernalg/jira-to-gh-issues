@@ -16,6 +16,9 @@
 package io.pivotal.jira;
 
 import java.util.Comparator;
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
@@ -40,6 +43,15 @@ public class JiraFixVersion {
 
 	public static Comparator<JiraFixVersion> comparator() {
 		return new JiraFixVersionComparator();
+	}
+
+	/**
+	 * Comparator for {@link VersionScheme#RELEASE}: newest first, ordering
+	 * milestone &lt; alpha &lt; beta &lt; RC &lt; final within the same numeric version.
+	 * Names without a leading number (e.g. "Future") sort last.
+	 */
+	public static Comparator<JiraFixVersion> releaseComparator() {
+		return new ReleaseVersionComparator();
 	}
 
 
@@ -88,6 +100,80 @@ public class JiraFixVersion {
 				n += str.charAt(i);
 			}
 			return n;
+		}
+	}
+
+	private static class ReleaseVersionComparator implements Comparator<JiraFixVersion> {
+
+		private static final Pattern VERSION_PATTERN = Pattern.compile("(\\d{1,9}(?:\\.\\d{1,9})*)(.*)");
+
+		private static final Pattern TRAILING_NUMBER_PATTERN = Pattern.compile("(\\d{1,9})\\s*$");
+
+		private static final int RANK_FINAL = 4;
+
+		@Override
+		public int compare(JiraFixVersion lhs, JiraFixVersion rhs) {
+			int result = compareNewestFirst(lhs.getName(), rhs.getName());
+			return result != 0 ? result : lhs.getName().compareTo(rhs.getName());
+		}
+
+		private static int compareNewestFirst(String lhs, String rhs) {
+			Matcher lhsMatcher = VERSION_PATTERN.matcher(lhs);
+			Matcher rhsMatcher = VERSION_PATTERN.matcher(rhs);
+			boolean lhsVersion = lhsMatcher.matches();
+			boolean rhsVersion = rhsMatcher.matches();
+			if (!lhsVersion || !rhsVersion) {
+				return Boolean.compare(rhsVersion, lhsVersion);
+			}
+			String[] lhsNumbers = lhsMatcher.group(1).split("\\.");
+			String[] rhsNumbers = rhsMatcher.group(1).split("\\.");
+			for (int i = 0; i < Math.max(lhsNumbers.length, rhsNumbers.length); i++) {
+				int result = Integer.compare(number(rhsNumbers, i), number(lhsNumbers, i));
+				if (result != 0) {
+					return result;
+				}
+			}
+			String lhsQualifier = qualifier(lhsMatcher.group(2));
+			String rhsQualifier = qualifier(rhsMatcher.group(2));
+			int lhsRank = rank(lhsQualifier);
+			int rhsRank = rank(rhsQualifier);
+			if (lhsRank != rhsRank) {
+				return Integer.compare(rhsRank, lhsRank);
+			}
+			if (lhsRank == RANK_FINAL) {
+				return 0;
+			}
+			return Integer.compare(trailingNumber(rhsQualifier), trailingNumber(lhsQualifier));
+		}
+
+		private static int number(String[] numbers, int index) {
+			return index < numbers.length ? Integer.parseInt(numbers[index]) : 0;
+		}
+
+		private static String qualifier(String text) {
+			return text.replaceFirst("^[\\s.\\-]+", "").toLowerCase(Locale.ROOT);
+		}
+
+		private static int rank(String qualifier) {
+			if (qualifier.startsWith("milestone") || qualifier.matches("m\\d*")) {
+				return 0;
+			}
+			if (qualifier.startsWith("alpha")) {
+				return 1;
+			}
+			if (qualifier.startsWith("beta")) {
+				return 2;
+			}
+			if (qualifier.startsWith("rc") || qualifier.startsWith("cr")) {
+				return 3;
+			}
+			// "", "final", "ga" and anything else, e.g. "(end of life)" or "android"
+			return RANK_FINAL;
+		}
+
+		private static int trailingNumber(String qualifier) {
+			Matcher matcher = TRAILING_NUMBER_PATTERN.matcher(qualifier);
+			return matcher.find() ? Integer.parseInt(matcher.group(1)) : 0;
 		}
 	}
 }

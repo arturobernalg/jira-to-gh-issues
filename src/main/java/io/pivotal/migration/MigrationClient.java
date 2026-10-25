@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -68,10 +69,12 @@ import org.springframework.http.RequestEntity;
 import org.springframework.http.RequestEntity.BodyBuilder;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
+import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.util.StringUtils;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponents;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -166,6 +169,44 @@ public class  MigrationClient {
 	}
 
 
+	/**
+	 * Fails before anything is imported if a dry run targets a public repository.
+	 * Issue bodies link to real pull requests, which shows on their timelines unless
+	 * the linking repository is private.
+	 */
+	public void validateDryRunRepository() {
+		if (!config.isDryRun()) {
+			return;
+		}
+		RequestEntity<Void> request = getRepositoryRequestBuilder(HttpMethod.GET, "").build();
+		Map<String, Object> repository = getRest().exchange(request, MAP_TYPE).getBody();
+		Assert.state(repository != null && Boolean.TRUE.equals(repository.get("private")),
+				"github.dry-run requires a private repository: " + config.getRepositorySlug());
+	}
+
+	/**
+	 * Fails before anything is imported if a mapped GitHub user cannot be assigned
+	 * in the target repository, since GitHub rejects the whole issue in that case.
+	 */
+	public void validateAssignees() {
+		if (config.isTestMode()) {
+			return;
+		}
+		List<String> notAssignable = new ArrayList<>();
+		for (String user : new TreeSet<>(jiraToGithubUsername.values())) {
+			RequestEntity<Void> request = getRepositoryRequestBuilder(HttpMethod.GET, "/assignees/" + user).build();
+			try {
+				getRest().exchange(request, String.class);
+			}
+			catch (HttpClientErrorException.NotFound ex) {
+				notAssignable.add(user);
+			}
+		}
+		Assert.state(notAssignable.isEmpty(), "Users not assignable in " + config.getRepositorySlug() + ": " +
+				notAssignable + ". Fix jira-to-github-users.properties.");
+		logger.info("All {} mapped users are assignable", new TreeSet<>(jiraToGithubUsername.values()).size());
+	}
+
 	public boolean deleteRepository() {
 		if(!this.config.isDeleteCreateRepositorySlug()) {
 			return false;
@@ -223,33 +264,9 @@ public class  MigrationClient {
 	}
 
 	private MilestoneFilter findExistingMilestones() {
-
-		// Maven Core has 120 milestones: 22 open, 88 closed.
-		// So we need pagination or quick and dirty hack split it into two requests
-
-		BodyBuilder requestBuilderOpen = getRepositoryRequestBuilder(HttpMethod.GET, "/milestones?state=open&per_page=100");
-		List<String> openExistingMilestones = this.getRest().exchange(requestBuilderOpen.build(), LIST_OF_MAPS_TYPE)
-				.getBody().stream()
-							.map(milestone -> (String) milestone.get("title"))
-							.toList();
-
-		logger.info("{} existing OPEN milestones: {}", openExistingMilestones.size(), openExistingMilestones);
-
-		BodyBuilder requestBuilderClosed = getRepositoryRequestBuilder(HttpMethod.GET, "/milestones?state=closed&per_page=100");
-		List<String> closedExistingMilestones = this.getRest().exchange(requestBuilderClosed.build(), LIST_OF_MAPS_TYPE)
-			.getBody().stream()
-			.map(milestone -> (String) milestone.get("title"))
-			.toList();
-
-		logger.info("{} existing CLOSED milestones: {}", closedExistingMilestones.size(), closedExistingMilestones);
-
-		List<String> allMilestones = new ArrayList<String>(openExistingMilestones.size() + closedExistingMilestones.size());
-
-		allMilestones.addAll(openExistingMilestones);
-		allMilestones.addAll(closedExistingMilestones);
-
-		logger.info("{} existing milestones in total: {}", allMilestones.size(), allMilestones);
-		return jiraVersion -> !allMilestones.contains(jiraVersion.getName());
+		Set<String> existingMilestones = retrieveMilestones().keySet();
+		logger.info("{} existing milestones: {}", existingMilestones.size(), existingMilestones);
+		return jiraVersion -> !existingMilestones.contains(jiraVersion.getName());
 	}
 
 	public void createLabelsIfNotExist() {
@@ -264,9 +281,16 @@ public class  MigrationClient {
 	}
 
 	private List<String> findExistingLabels() {
-		RequestEntity<Void> requestEntity = getRepositoryRequestBuilder(HttpMethod.GET, "/labels?per_page=100").build();
-		List<Map<String, Object>> exitingsLabels = getRest().exchange(requestEntity, LIST_OF_MAPS_TYPE).getBody();
-		List<String> existingLabelNames = exitingsLabels.stream().map(labelObject -> (String) labelObject.get("name")).toList();
+		List<String> existingLabelNames = new ArrayList<>();
+		for (int page = 1; ; page++) {
+			RequestEntity<Void> requestEntity =
+					getRepositoryRequestBuilder(HttpMethod.GET, "/labels?per_page=100&page=" + page).build();
+			List<Map<String, Object>> labels = getRest().exchange(requestEntity, LIST_OF_MAPS_TYPE).getBody();
+			if (CollectionUtils.isEmpty(labels)) {
+				break;
+			}
+			labels.forEach(label -> existingLabelNames.add((String) label.get("name")));
+		}
 		logger.info("Existing labels: {}", existingLabelNames);
 		return existingLabelNames;
 	}
@@ -345,12 +369,15 @@ public class  MigrationClient {
 			return;
 		}
 
-		if(!config.isDeleteCreateRepositorySlug()) {
-			// Because linking pull request triggers events and it should not run at testing.
+		if (isLinkPullRequests()) {
 			logger.info("Linking pull requests");
 			importedIssues.forEach(issue -> executeLinkPullRequestForImportedIssue(issue, context));
 		}
 
+		if (!config.isCreateBackportHolders()) {
+			logger.info("Backport issue holders disabled ({} milestones with backports)", backportMap.size());
+			return;
+		}
 		logger.info("{} backport issue holders to create", backportMap.size());
 		if (backportMap.isEmpty()) {
 			return;
@@ -382,6 +409,11 @@ public class  MigrationClient {
 					.collect(Collectors.toList());
 			logger.error("Failed:\n" + failed + "\nSucceeded:\n" + succeeded);
 		}
+	}
+
+	private boolean isLinkPullRequests() {
+		// Linking comments on pull requests, which notifies their participants, so never in test mode.
+		return config.isLinkPullRequests() && !config.isTestMode();
 	}
 
 	private void executeLinkPullRequestForImportedIssue(ImportedIssue importedIssue, MigrationContext context) {
@@ -539,10 +571,10 @@ public class  MigrationClient {
 		boolean closed = fields.getResolution() != null;
 		ghIssue.setClosed(closed);
 		if (closed) {
-			ghIssue.setClosedAt(updated);
+			ghIssue.setClosedAt(fields.getResolutiondate() != null ? fields.getResolutiondate() : updated);
 		}
 		// Can't use actual assignees in test mode (they're probably not contributors in the test project)
-		if (!config.isDeleteCreateRepositorySlug()) {
+		if (!config.isTestMode()) {
 			JiraUser assignee = fields.getAssignee();
 			if (assignee != null) {
 				String ghUsername = jiraToGithubUsername.get(assignee.getKey());
@@ -651,7 +683,7 @@ public class  MigrationClient {
 			// Avoid inserting links to actual pull requests while in testing mode since
 			// that generates events in the timeline of the pull requests, e.g.
 			// https://github.com/spring-projects/spring-framework/pull/1997
-			if (!getConfig().isDeleteCreateRepositorySlug()) {
+			if (!getConfig().isTestMode()) {
 				references.add("pull request " + fields.getPullRequestUrl());
 			}
 		}
@@ -847,12 +879,11 @@ public class  MigrationClient {
 						context.addFailureMessage(milestone.get("title") +
 								" backport issues holder is a missing the GitHub issue id for " + jiraKey + "\n");
 					}
-					return "- " + jiraIssue.getFields().getSummary() + " #" + ghIssueId;
+					// escape annotations (colliding with GitHub mentions), but not the issue reference
+					MarkupEngine engine = markup.engine(jiraIssue.getFields().getCreated());
+					return "- " + engine.convert(jiraIssue.getFields().getSummary()).trim() + " #" + ghIssueId;
 				})
 				.collect(Collectors.joining("\n"));
-		JiraIssue backportIssue = backportIssues.get(0);
-		MarkupEngine engine = markup.engine(backportIssue.getFields().getCreated());
-		body = engine.convert(body);  // escape annotations (colliding with GitHub mentions)
 		ghIssue.setBody(body);
 		return ghIssue;
 	}
@@ -862,8 +893,10 @@ public class  MigrationClient {
 		for (JiraIssue jiraIssue : pendingJiraIssues) {
 			Integer gitHubIssueId = context.getPendingGitHubIssueId(jiraIssue.getKey());
             if (checkIfGithubIssueExists(gitHubIssueId)) {
-				logger.info("Linking pull request of GitHub issue " + gitHubIssueId);
-				executeLinkPullRequestForPrevioulyPendingIssues(jiraIssue, gitHubIssueId, context);
+				if (isLinkPullRequests()) {
+					logger.info("Linking pull request of GitHub issue " + gitHubIssueId);
+					executeLinkPullRequestForPrevioulyPendingIssues(jiraIssue, gitHubIssueId, context);
+				}
 				checkAndUpdateClosedReason(jiraIssue, gitHubIssueId);
 				context.logPendedIssueAsImport(jiraIssue.getKey());
 			} else {

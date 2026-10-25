@@ -57,4 +57,29 @@ public class GithubConfig {
 	 * </p>
 	 */
 	boolean deleteCreateRepositorySlug;
+
+	/**
+	 * Test run against a scratch repository that is left as is: no assignees,
+	 * no pull request references and no comments on pull requests.
+	 */
+	boolean dryRun;
+
+	/**
+	 * Whether to comment "Resolve #n" on pull requests found in Jira remote links.
+	 * Off by default: the comment goes to the pull request with that number in the
+	 * target repository even if the link points to another repository.
+	 */
+	boolean linkPullRequests;
+
+	/**
+	 * Whether to create one "&lt;milestone&gt; Backported Issues" issue per backport milestone.
+	 */
+	boolean createBackportHolders;
+
+	/**
+	 * Whether this is a test run that must not touch real users or pull requests.
+	 */
+	public boolean isTestMode() {
+		return dryRun || deleteCreateRepositorySlug;
+	}
 }

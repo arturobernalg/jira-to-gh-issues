@@ -38,7 +38,7 @@ public class JiraIssue {
 
 	public static final String FIELD_NAMES = "summary,comment,assignee,components,created,creator," +
 			"description,versions,fixVersions,issuetype,reporter,resolution,status,issuelinks," +
-			"resolution,updated,parent,subtasks,labels,attachment,watches," +
+			"resolution,resolutiondate,updated,parent,subtasks,labels,attachment,watches," +
 			"customfield_10120,customfield_10684,security,priority";
 
 
@@ -90,6 +90,14 @@ public class JiraIssue {
 	 * returned on the parent task ticket do not list details such as fixVersions.
 	 */
 	public void initFixAndBackportVersions(Map<String, JiraIssue> backportSubtasks) {
+		initFixAndBackportVersions(backportSubtasks, VersionScheme.SPRING);
+	}
+
+	/**
+	 * A variant of {@link #initFixAndBackportVersions(Map)} that orders the versions
+	 * with the given scheme.
+	 */
+	public void initFixAndBackportVersions(Map<String, JiraIssue> backportSubtasks, VersionScheme scheme) {
 
 		List<JiraFixVersion> versions = new ArrayList<>(fields.getFixVersions());
 
@@ -103,14 +111,16 @@ public class JiraIssue {
 			}
 		}
 
-		versions.sort(JiraFixVersion.comparator());
-		if (versions.size() > 1 && versions.get(0).isBeforeGA()) {
+		versions.sort(scheme.getComparator());
+		if (scheme.isDropDevelopmentVersions() && versions.size() > 1 && versions.get(0).isBeforeGA()) {
 			versions.remove(0);
 		}
 
 		fixVersion = versions.isEmpty() ? null : versions.get(0);
 		backportVersions = versions.size() > 1 ?
-				versions.subList(1, versions.size()).stream().filter(v -> !v.isBeforeGA()).collect(Collectors.toList()) :
+				versions.subList(1, versions.size()).stream()
+						.filter(v -> !scheme.isDropDevelopmentVersions() || !v.isBeforeGA())
+						.collect(Collectors.toList()) :
 				Collections.emptyList();
 	}
 
@@ -130,6 +140,7 @@ public class JiraIssue {
 		JiraStatus status;
 		JiraPriority priority;
 		JiraResolution resolution;
+		DateTime resolutiondate;
 		JiraUser reporter;
 		JiraUser assignee;
 		List<IssueLink> issuelinks;
