@@ -775,7 +775,13 @@ public class  MigrationClient {
 					.header("Authorization", "token " + this.config.getAccessToken())
 					.build();
 			int retries = 0;
-			int maxRetries = 5;
+			// The rate limiter spaces every GitHub call (not just these polls) 2 seconds
+			// apart, so under the sustained write load of a real migration run this budget
+			// is the only thing standing between a merely slow import and one we give up on
+			// before GitHub ever returns an issue number - at which point the issue exists on
+			// GitHub but is untracked in github-issue-mappings.properties, and a retry of the
+			// run would create a duplicate for it. 60 retries is roughly 2 minutes.
+			int maxRetries = 60;
 			while (true) {
 				if (retries == maxRetries) {
 					logger.error("Import for [" + jiraIssue.getKey() + "] failed after " + retries + " retries");
