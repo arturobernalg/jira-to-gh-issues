@@ -207,39 +207,22 @@ public class  MigrationClient {
 		logger.info("All {} mapped users are assignable", new TreeSet<>(jiraToGithubUsername.values()).size());
 	}
 
+	/**
+	 * Disabled. This used to delete the configured repository when
+	 * {@code github.delete-create-repository-slug} was set, to reset a scratch repository
+	 * between dry runs. A boolean in a properties file was the only thing standing between
+	 * that and deleting the real target repository - code, history, PRs, releases, all of it,
+	 * unrecoverable - if the flag was ever left on by mistake while pointed at a real
+	 * migration target. Reset a scratch repository by hand through the GitHub API instead.
+	 */
 	public boolean deleteRepository() {
-		if(!this.config.isDeleteCreateRepositorySlug()) {
-			return false;
-		}
-
-		String slug = this.config.getRepositorySlug();
-		logger.info("Deleting repository {}", slug);
-
-		BodyBuilder requestBuilder = getRepositoryRequestBuilder(HttpMethod.DELETE, "");
-		getRest().exchange(requestBuilder.build(), MAP_TYPE);
-
-		return true;
+		return false;
 	}
 
+	/**
+	 * Disabled together with {@link #deleteRepository()}; see its Javadoc.
+	 */
 	public void createRepository() {
-		if(!this.config.isDeleteCreateRepositorySlug()) {
-			return;
-		}
-
-		String slug = this.config.getRepositorySlug();
-		logger.info("Creating repository {}", slug);
-
-		Map<String, String> repository = new HashMap<>();
-		repository.put("name", slug.split("/")[1]);
-		repository.put("private", "true");
-
-		String orga = slug.split("/")[0];
-		RequestEntity<Map<String, String>> requestEntity =
-				RequestEntity.post(URI.create(GITHUB_URL + "/orgs/" + orga + "/repos"))
-						.header(HttpHeaders.AUTHORIZATION, "token " + this.config.getAccessToken())
-						.body(repository);
-
-		getRest().exchange(requestEntity, MAP_TYPE);
 	}
 
 	public void createMilestonesIfNotExists(List<JiraVersion> versions) {

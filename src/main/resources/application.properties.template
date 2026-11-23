@@ -44,9 +44,9 @@ github.repository-slug=arturobernalg/hc-core-issues-test
 #github.repository-slug=apache/httpasyncclient
 
 ##
-# If set, the migration script will attempt to delete / create a GitHub
-# repository to migrate the issues to using the github.repository-slug.
-# Useful for testing the migration to a dummy repository.
+# Ignored. MigrationClient.deleteRepository()/createRepository() are disabled - too easy for
+# this to end up true while pointed at a real migration target. Reset a scratch repository
+# by hand through the GitHub API instead.
 github.delete-create-repository-slug=false
 
 ##
@@ -75,6 +75,11 @@ jira.link-project-keys=HTTPCLIENT,HTTPCORE,HTTPASYNC
 ##
 # Escape "#123" in Jira text, which would otherwise link to an unrelated GitHub issue.
 jira.escape-issue-references=true
+
+##
+# Query the Jira development panel for commit links. issues.apache.org has no such
+# integration and answers 500; HttpComponents commit links are in the jira-bot comments.
+jira.load-commits=false
 
 ##
 # If set, will use this JQL query to import issues.
