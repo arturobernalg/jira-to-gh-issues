@@ -31,3 +31,4 @@ markup-before.txt
 markup-after.txt
 **/application.properties
 github-issue-mappings-failures.txt
+inventory-*/
